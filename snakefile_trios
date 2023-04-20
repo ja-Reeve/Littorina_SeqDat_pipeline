@@ -1,0 +1,170 @@
+import os
+
+def get_fastq_R1(wildcards):
+        return(os.popen("find "+path_fastp_files+""+wildcards.sample+"/02-FASTQ/ | grep 'R1_001.fastq.gz'").read().split("\n")[:-1])
+
+def get_fastq_R2(wildcards):
+        return(os.popen("find "+path_fastp_files+""+wildcards.sample+"/02-FASTQ/ | grep 'R2_001.fastq.gz'").read().split("\n")[:-1])
+
+path_fastp_files = "/data/evolgen/TRIOS/ANG/export.uppmax.uu.se/snic2020-6-155/delivery04355/INBOX/P18710/"
+path_github = ""
+path_output = "/data/evolgen/TRIOS/ANG/"
+path_ref_genome = "/data/evolgen/Lsaxatilis_reference_genome_new/Lsax_genome_CLR_HiC_curated_freeze_1_2023_02_17.fasta.fa"
+
+SAMPLES = os.popen("find "+path_fastp_files+" -maxdepth 1 -type d -exec basename {} \; | grep 'P18'").read().split("\n")[:-1][1:]
+
+#SAMPLES = SAMPLES[0]
+#SAMPLES = ["P18710_117"]
+print(SAMPLES)
+
+rule all:
+        input:
+                fastp_R1 = expand(path_output+"fastp/{sample}_R1_fastp.fastq.gz",sample=SAMPLES),
+                fastp_R2 = expand(path_output+"fastp/{sample}_R2_fastp.fastq.gz",sample=SAMPLES),
+                report_html = expand(path_output+"fastp/fastp_report_{sample}.html",sample=SAMPLES),
+                report_json = expand(path_output+"fastp/fastp_report_{sample}.json",sample=SAMPLES),
+                fastp_done = expand(path_output+"fastp/done_{sample}",sample=SAMPLES),
+                raw_bam = expand(path_output+"mapping/{sample}.bam",sample=SAMPLES),
+                bam_sort = expand(path_output+"mapping/{sample}_sort_picard.bam",sample=SAMPLES),
+                bam_sort_markdup = expand(path_output+"mapping/{sample}_sort_markdup_picard.bam",sample=SAMPLES),
+                duplicate_metrics = expand(path_output+"mapping/{sample}_duplicate_metrics.txt",sample=SAMPLES),
+                bam_sort_markdup_rg = expand(path_output+"mapping/{sample}_sort_markdup_rg_picard.bam",sample=SAMPLES)
+                
+rule fastp:
+       input:
+               raw_R1=get_fastq_R1,
+               raw_R2=get_fastq_R2
+       output:
+               fastp_R1=path_output+"fastp/{sample}_R1_fastp.fastq.gz",
+               fastp_R2=path_output+"fastp/{sample}_R2_fastp.fastq.gz",
+               report_html=path_output+"fastp/fastp_report_{sample}.html",
+               report_json=path_output+"fastp/fastp_report_{sample}.json"
+       message:
+               "Fastp processing : {wildcards.sample}"
+       log:
+               stdout = path_github+"log/{wildcards.sample}_fastp.log"
+       benchmark:
+               path_github+"benchmark/{wildcards.sample}_fastp_benchmark.txt"
+       params:
+               thread = 1
+       shell :
+               "fastp "
+               "-i {input.raw_R1} "
+               "-I {input.raw_R2} "
+               "-o {output.fastp_R1} "
+               "-O {output.fastp_R2} "
+               "--trim_poly_g "
+               "--correction "
+               "--low_complexity_filter "
+               "--html {output.report_html} "
+               "--json {output.report_json} "
+               "--report_title {wildcards.sample} "
+               "--thread {params.thread} "
+               "--dont_overwrite"
+
+#os.system("python script/initial_fastp.py "+path_output+"fastp/summary_fastp.txt")
+#print("python script/initial_fastp.py "+path_output+"fastp/summary_fastp.txt")
+
+rule extract_fastp_info:
+        input:
+                report_json=path_output+"fastp/fastp_report_{sample}.json",
+                fastp_script = path_github+"script/extract_fastp.py"
+        output:
+                fastp_done = path_output+"fastp/done_{sample}"
+        message:
+                "Extract fastp info: {wildcards.sample}"
+        log:
+                stdout = path_github+"log/{sample}_extract_fastp.log"
+        benchmark:
+                path_github+"benchmark/{sample}_extract_fastp_benchmark.txt"
+        shell:
+                "python {input.fastp_script} {input.report_json} "+path_output+"fastp/summary_fastp.txt && touch {output.fastp_done}"
+
+rule reference_mapping:
+        input:
+                fastp_R1=path_output+"fastp/{sample}_R1_fastp.fastq.gz",
+                fastp_R2=path_output+"fastp/{sample}_R2_fastp.fastq.gz",
+                reference_genome = path_ref_genome
+        output:
+                raw_bam = path_output+"mapping/{sample}.bam"
+        message:
+                "Reference mapping: {wildcards.sample}"
+        log:
+                stdout = path_github+"log/{sample}_reference_mapping.log"
+        benchmark:
+                path_github+"benchmark/{sample}_reference_mapping_benchmark.txt"
+        params:
+                threads = 1
+        shell:
+                "(bwa mem "
+                "-M "
+                "-t {params.threads} "
+                "{input.reference_genome} "
+                "{input.fastp_R1} "
+                "{input.fastp_R2} "
+                "| samtools view -b > {output.raw_bam}) 2> {log.stdout}"
+
+rule sort_sam:
+        input:
+                raw_bam = path_output+"mapping/{sample}.bam"
+        output:
+                bam_sort = path_output+"mapping/{sample}_sort_picard.bam"
+        message:
+                "Sort sam for: {wildcards.sample}"
+        log:
+                stdout = path_github+"log/{sample}_sort_sam_mapping.log"
+        benchmark:
+                path_github+"benchmark/{sample}_sort_sam_mapping_benchmark.txt"
+        shell:
+                "(picard SortSam "
+                "-Xmx10g "
+                "I={input.raw_bam} "
+                "O={output.bam_sort} "
+                "SO=coordinate "
+                "CREATE_INDEX=false "
+                "VALIDATION_STRINGENCY=LENIENT) 2> {log.stdout}"
+
+rule mark_duplicates:
+        input:
+                bam_sort = path_output+"mapping/{sample}_sort_picard.bam"
+        output:
+                duplicate_metrics = path_output+"mapping/{sample}_duplicate_metrics.txt",
+                bam_sort_markdup = path_output+"mapping/{sample}_sort_markdup_picard.bam"
+        message:
+                "Mark duplicates: {wildcards.sample}"
+        log:
+                stdout = path_github+"log/{sample}_mark_duplicates.log"
+        benchmark:
+                path_github+"benchmark/{sample}_mark_duplicates_benchmark.txt"
+        shell:
+                "(picard MarkDuplicates "
+                "-Xmx10g "
+                "I={input.bam_sort} "
+                "O={output.bam_sort_markdup} "
+                "ASSUME_SORTED=TRUE "
+                "REMOVE_DUPLICATES=FALSE "
+                "CREATE_INDEX=true "
+                "TMP_DIR=/data/evolgen/TRIOS/tmp "
+                "METRICS_FILE={output.duplicate_metrics} "
+                "VALIDATION_STRINGENCY=LENIENT) 2> {log.stdout}"
+                
+rule add_read_group:
+        input:
+                bam_sort_markdup = path_output+"mapping/{sample}_sort_markdup_picard.bam"
+        output:
+                bam_sort_markdup_rg = path_output+"mapping/{sample}_sort_markdup_rg_picard.bam"
+        message:
+                "Read group: {wildcards.sample}"
+        log:
+                stdout = path_github+"log/{sample}_read_group.log"
+        benchmark:
+                path_github+"benchmark/{sample}_read_group_benchmark.txt"
+        shell:
+                "(picard AddOrReplaceReadGroups "
+                "-Xmx10g "
+                "I={input.bam_sort_markdup} "
+                "O={output.bam_sort_markdup_rg} "
+                "RGPL=ILLUMINA "
+                "RGLB=lib "
+                "RGPU=trio "
+                "RGSM={wildcards.sample}) 2> {log.stdout}"
