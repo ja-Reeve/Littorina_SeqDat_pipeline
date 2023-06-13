@@ -25,10 +25,24 @@ rule all:
                 report_json = expand(path_output+"fastp/fastp_report_{sample}.json",sample=SAMPLES),
                 fastp_done = expand(path_output+"fastp/done_{sample}",sample=SAMPLES),
                 raw_bam = expand(path_output+"mapping/{sample}.bam",sample=SAMPLES),
-                bam_sort = expand(path_output+"mapping/{sample}_sort_picard.bam",sample=SAMPLES),
-                bam_sort_markdup = expand(path_output+"mapping/{sample}_sort_markdup_picard.bam",sample=SAMPLES),
-                duplicate_metrics = expand(path_output+"mapping/{sample}_duplicate_metrics.txt",sample=SAMPLES),
-                bam_sort_markdup_rg = expand(path_output+"mapping/{sample}_sort_markdup_rg_picard.bam",sample=SAMPLES)
+                markdup_bam = expand(path_output+"mapping/{sample}_markdup.bam",sample=SAMPLES),
+                samtools_stats = expand(path_output+"mapping/{sample}_samtools_stats.stats",sample=SAMPLES),
+                flagstat = expand(path_output+"mapping/{sample}_flagstat.txt",sample=SAMPLES),
+                dict = path_ref_genome[:len(path_ref_genome)-3]+".dict",
+                gvcf_super1 = expand(path_output+"variant_calling/{sample}_SUPER1.vcf.gz",sample=SAMPLES),
+                joint_genotyping_files = path_output+"variant_calling/Joint_Genotyping_SUPER1",
+                vcf_super1 = path_output+"VCF/TRIOS_ANG_SUPER1.vcf.gz",
+                vcf_super1_with_filter = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked.vcf.gz",
+                vcf_super1_filtered = path_output+"VCF/TRIOS_ANG_SUPER1_filtered.vcf.gz",
+                vcf_super1_with_filter_nogq20 = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20.vcf.gz",
+                vcf_super1_filtered_nogq20 = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_nogq20.vcf.gz",
+                vcf_super1_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_bcftools.bcf",
+                #touch_mendelian_violation = expand(path_output+"analysis/mendelian_violation/touch/{child}.touch",child=CHILD),
+                vcf_super1_with_filter_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_bcftools.vcf.gz",
+                vcf_super1_filtered_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_bcftools.vcf.gz",
+                vcf_super1_with_filter_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20_bcftools.vcf.gz",
+                vcf_super1_filtered_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_nogq20_bcftools.vcf.gz",
+                touch_mendelian_violation_bcftools = expand(path_output+"analysis/mendelian_violation/touch/{child}_bcftools.touch",child=CHILD)
                 
 rule fastp:
        input:
@@ -103,68 +117,347 @@ rule reference_mapping:
                 "{input.fastp_R1} "
                 "{input.fastp_R2} "
                 "| samtools view -b > {output.raw_bam}) 2> {log.stdout}"
-
-rule sort_sam:
+rule sort_readgroup_markdup_bam:
         input:
                 raw_bam = path_output+"mapping/{sample}.bam"
         output:
-                bam_sort = path_output+"mapping/{sample}_sort_picard.bam"
+                markdup_bam = path_output+"mapping/{sample}_markdup.bam",
+                duplicate_metrics = path_output+"mapping/{sample}_duplicate_metrics.txt"
         message:
-                "Sort sam for: {wildcards.sample}"
-        log:
-                stdout = path_github+"log/{sample}_sort_sam_mapping.log"
+                "Sort, add read group and mark duplicates of bam files: {wildcards.sample}"
         benchmark:
-                path_github+"benchmark/{sample}_sort_sam_mapping_benchmark.txt"
+                path_github+"benchmark/{sample}_markdup_benchmark.txt"
         shell:
-                "(picard SortSam "
-                "-Xmx10g "
-                "I={input.raw_bam} "
-                "O={output.bam_sort} "
-                "SO=coordinate "
-                "CREATE_INDEX=false "
-                "VALIDATION_STRINGENCY=LENIENT) 2> {log.stdout}"
+                "(cd "+path_output+" && "
+                "samtools sort -n -O BAM {input.raw_bam} | "
+                "samtools fixmate -m - - | "
+                "samtools sort -O BAM - | "
+                "samtools markdup -s - - | "
+                "samtools addreplacerg -r '@RG\tID:1\tSM:{wildcards.sample}\tPL:ILLUMINA\tLB:lib\tPU:trio' -O BAM - -o {output.markdup_bam}) 2> {output.duplicate_metrics}"
 
-rule mark_duplicates:
+rule samtools_stats:
         input:
-                bam_sort = path_output+"mapping/{sample}_sort_picard.bam"
+                markdup_bam = path_output+"mapping/{sample}_markdup.bam"
         output:
-                duplicate_metrics = path_output+"mapping/{sample}_duplicate_metrics.txt",
-                bam_sort_markdup = path_output+"mapping/{sample}_sort_markdup_picard.bam"
+                samtools_stats = path_output+"mapping/{sample}_samtools_stats.stats"
         message:
-                "Mark duplicates: {wildcards.sample}"
+                "Samtools stats : {wildcards.sample}"
         log:
-                stdout = path_github+"log/{sample}_mark_duplicates.log"
+                stdout = path_github+"log/{sample}_samtools_stats.log"
         benchmark:
-                path_github+"benchmark/{sample}_mark_duplicates_benchmark.txt"
+                path_github+"benchmark/{sample}_samtools_stats_benchmark.txt"
         shell:
-                "(picard MarkDuplicates "
-                "-Xmx10g "
-                "I={input.bam_sort} "
-                "O={output.bam_sort_markdup} "
-                "ASSUME_SORTED=TRUE "
-                "REMOVE_DUPLICATES=FALSE "
-                "CREATE_INDEX=true "
-                "TMP_DIR=/data/evolgen/TRIOS/tmp "
-                "METRICS_FILE={output.duplicate_metrics} "
-                "VALIDATION_STRINGENCY=LENIENT) 2> {log.stdout}"
+                "(samtools "
+                "stats "
+                "{input.markdup_bam} > "
+                "{output.samtools_stats}) 2> {log.stdout}"
                 
-rule add_read_group:
+ rule samtools_flagstats:
+       input:
+               markdup_bam = path_output+"mapping/{sample}_markdup.bam"
+       output:
+               flagstat = path_output+"mapping/{sample}_flagstat.txt"
+       message:
+               "Flagstat : {wildcards.sample}"
+       log:
+               stdout = path_github+"log/{sample}_flagstat.log"
+       benchmark:
+               path_github+"benchmark/{sample}_flagstat_benchmark.txt"
+       shell:
+               "(samtools "
+               "flagstat "
+               "{input.markdup_bam} > "
+               "{output.flagstat}) 2> {log.stdout}"
+
+rule create_dictionary:
+       input:
+               reference_genome = path_ref_genome
+       output:
+               dict = path_ref_genome[:len(path_ref_genome)-3]+".dict"
+       message:
+               "Create dictionary for the reference genome"
+       log:
+               stdout = path_github+"log/dic_ref_genome.log"
+       benchmark:
+               path_github+"benchmark/dic_ref_genome_benchmark.txt"
+       shell:
+               "(picard CreateSequenceDictionary "
+               "R={input.reference_genome} "
+               "O={output.dict}) 2> {log.stdout}"
+
+rule haplotype_caller_super1:
+       input:
+               markdup_bam = path_output+"mapping/{sample}_markdup.bam",
+               reference_genome = path_ref_genome
+       output:
+               gvcf_super1 = path_output+"variant_calling/{sample}_SUPER1.vcf.gz",
+               realign_bam_super1 = path_output+"mapping/{sample}_realign_super1.bam"
+       message:
+               "Haplotype caller : {wildcards.sample}"
+       log:
+               stdout = path_github+"log/{sample}_haplotype_caller.log"
+       benchmark:
+               path_github+"benchmark/{sample}_haplotype_caller_benchmark.txt"
+       shell:
+               "(samtools index {input.markdup_bam} && "
+               "gatk HaplotypeCaller -R {input.reference_genome} "
+               "-I {input.markdup_bam} "
+               "-O {output.gvcf_super1} "
+               "-bamout {output.realign_bam_super1} "
+               "-ERC GVCF "
+               "--tmp-dir "+path_output+"../tmp/ "
+               "-L SUPER_1) 2> {log.stdout}"
+
+if len(os.popen("ls "+path_output+"variant_calling | grep '.gz$'").read().split("\n")[:-1]) == len(SAMPLES) and os.path.exists(path_output+"variant_calling/trios_ang_samples.txt")==False:
+        os.system("ls "+path_output+"variant_calling/ | grep 'gz$' | cut -c1-10 > "+path_output+"variant_calling/trios_ang_samples_1.txt && ls -d "+path_output+"variant_calling/* | grep 'gz$' > "+path_output+"variant_calling/trios_ang_samples_2.txt && paste -d'\t' "+path_output+"variant_calling/trios_ang_samples_1.txt "+path_output+"variant_calling/trios_ang_samples_2.txt > "+path_output+"variant_calling/trios_ang_samples.txt")
+
+
+rule joint_genotyping:
         input:
-                bam_sort_markdup = path_output+"mapping/{sample}_sort_markdup_picard.bam"
+                name = path_output+"variant_calling/trios_ang_samples.txt"
         output:
-                bam_sort_markdup_rg = path_output+"mapping/{sample}_sort_markdup_rg_picard.bam"
+                joint_genotyping_files = path_output+"variant_calling/Joint_Genotyping_SUPER1"
         message:
-                "Read group: {wildcards.sample}"
+                "Combined gvcfs for SUPER1"
         log:
-                stdout = path_github+"log/{sample}_read_group.log"
+                stdout = path_github+"log/joint_genotyping_SUPER1.log"
         benchmark:
-                path_github+"benchmark/{sample}_read_group_benchmark.txt"
+                path_github+"benchmark/joint_genotyping_SUPER1.txt"
         shell:
-                "(picard AddOrReplaceReadGroups "
-                "-Xmx10g "
-                "I={input.bam_sort_markdup} "
-                "O={output.bam_sort_markdup_rg} "
-                "RGPL=ILLUMINA "
-                "RGLB=lib "
-                "RGPU=trio "
-                "RGSM={wildcards.sample}) 2> {log.stdout}"
+                "(gatk GenomicsDBImport "
+                "--sample-name-map {input.name} "
+                "--genomicsdb-workspace-path {output.joint_genotyping_files} "
+                "--tmp-dir "+path_output+"../tmp/ "
+                "--reader-threads 10 "
+                "-L SUPER_1) 2> {log.stdout}"
+
+rule genotype_gvcf:
+        input:
+                reference_genome = path_ref_genome,
+                joint_genotyping_files = path_output+"variant_calling/Joint_Genotyping_SUPER1"
+        output:
+                vcf_super1 = path_output+"VCF/TRIOS_ANG_SUPER1.vcf.gz"
+        message:
+                "Joint genotyping for SUPER1"
+        log:
+                stdout = path_github+"log/genotype_gvcf_SUPER1.log"
+        benchmark:
+                path_github+"benchmark/genotype_gvcf_SUPER1.txt"
+        shell:
+                "(gatk GenotypeGVCFs "
+                "-R {input.reference_genome} "
+                "-V gendb://{input.joint_genotyping_files} "
+                "-G StandardAnnotation "
+                "-O {output.vcf_super1}) 2> {log.stdout}"
+
+rule marked_vcf_with_filter:
+        input:
+                vcf_super1 = path_output+"VCF/TRIOS_ANG_SUPER1.vcf.gz"
+        output:
+                vcf_super1_with_filter = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked.vcf.gz"
+        message:
+                "Marked filter on raw VCFS for SUPER1"
+        log:
+                stdout = path_github+"log/marked_vcf_filter_SUPER1.log"
+        benchmark:
+                path_github+"benchmark/marked_vcf_filter_SUPER1.txt"
+        shell:
+                '(tabix -f -p vcf {input.vcf_super1} && '
+                'vcftools --gzvcf {input.vcf_super1} --minGQ 20 --stdout --recode --recode-INFO-all | '
+                'bcftools filter -e "QD<2.0" -s "QD2" -m + | '
+                #'bcftools filter -e "AVG(FMT/DP)>{params.cutoff}.0" -s "AVGDPcutoff{params.cutoff}" -m + | '
+                'bcftools filter -e "MQ<40.0" -s "MQ40" -m + | '
+                'bcftools filter -e "FS>60.0" -s "FS60" -m + | '
+                'bcftools filter -e "SOR>3.0" -s "SOR3" -m + | '
+                'bcftools filter -e "MQRankSum<-12.5" -s "MQRankSum-12.5" -m + | '
+                'bcftools filter -e "ReadPosRankSum<-8.0" -s "ReadPosRankSum-8" -m + | '
+                'bcftools filter -e "F_MISSING>0.5" -s "MISSING50" -m + | '
+                'bgzip -c > {output.vcf_super1_with_filter}) 2> {log.stdout}'
+
+rule filter_vcf:
+        input:
+                vcf_super1_with_filter = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked.vcf.gz"
+        output:
+                vcf_super1_filtered = path_output+"VCF/TRIOS_ANG_SUPER1_filtered.vcf.gz"
+        message:
+                "Filter VCFs for SUPER1"
+        log:
+                stdout = path_github+"log/filtered_vcf_SUPER1.log"
+        benchmark:
+                path_github+"benchmark/filtered_vcf_SUPER1.txt"
+        shell:
+                "(bcftools filter -g 5 {input.vcf_super1_with_filter} | "
+                "bcftools view --types snps --max-alleles 2 | "
+                "bgzip -c > {output.vcf_super1_filtered}) 2> {log.stdout}"
+
+rule marked_vcf_with_filter_nogq20:
+        input:
+                vcf_super1 = path_output+"VCF/TRIOS_ANG_SUPER1.vcf.gz"
+        output:
+                vcf_super1_with_filter_nogq20 = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20.vcf.gz"
+        message:
+                "Marked filter on raw VCFS for SUPER1 no GQ 20"
+        log:
+                stdout = path_github+"log/marked_vcf_filter_SUPER1_nogq20.log"
+        benchmark:
+                path_github+"benchmark/marked_vcf_filter_SUPER1_nogq20.txt"
+        shell:
+                '(tabix -f -p vcf {input.vcf_super1} && '
+                'bcftools filter -e "QD<2.0" -s "QD2" -m + | '
+                #'bcftools filter -e "AVG(FMT/DP)>{params.cutoff}.0" -s "AVGDPcutoff{params.cutoff}$
+                'bcftools filter -e "MQ<40.0" -s "MQ40" -m + | '
+                'bcftools filter -e "FS>60.0" -s "FS60" -m + | '
+                'bcftools filter -e "SOR>3.0" -s "SOR3" -m + | '
+                'bcftools filter -e "MQRankSum<-12.5" -s "MQRankSum-12.5" -m + | '
+                'bcftools filter -e "ReadPosRankSum<-8.0" -s "ReadPosRankSum-8" -m + | '
+                'bcftools filter -e "F_MISSING>0.5" -s "MISSING50" -m + | '
+                'bgzip -c > {output.vcf_super1_with_filter_nogq20}) 2> {log.stdout}'
+
+rule filter_vcf_nogq20:
+        input:
+                vcf_super1_with_filter_nogq20 = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20.vcf.gz"
+        output:
+                vcf_super1_filtered_nogq20 = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_nogq20.vcf.gz"
+        message:
+                "Filter VCFs for SUPER1 no gq 20"
+        log:
+                stdout = path_github+"log/filtered_vcf_SUPER1_nogq20.log"
+        benchmark:
+                path_github+"benchmark/filtered_vcf_SUPER1_nogq20.txt"
+        shell:
+                "(bcftools filter -g 5 {input.vcf_super1_with_filter_nogq20} | "
+                "bcftools view --types snps --max-alleles 2 | "
+                "bgzip -c > {output.vcf_super1_filtered_nogq20}) 2> {log.stdout}"
+
+rule bcftools_calling:
+       input:
+               bam_list = path_output+"mapping/bam_list.txt",
+               reference_genome = path_ref_genome
+       output:
+                vcf_super1_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_bcftools.bcf"
+       message:
+               "Call variants with bcftools"
+       log:
+               stdout = path_github+"log/bcftools_calling.log"
+       benchmark:
+               path_github+"benchmark/bcftools_calling.txt"
+       shell:
+               "(bcftools mpileup "
+               "-f {input.reference_genome} "
+               "-b {input.bam_list} "
+               "-r SUPER_1 | "
+               "bcftools call "
+               "-f GQ,GP "
+               "-mv "
+               "-Ob "
+               "-o {output.vcf_super1_bcftools}) 2> {log.stdout}"
+
+rule marked_vcf_with_filter_bcftools:
+        input:
+                vcf_super1_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_bcftools.bcf"
+        output:
+                vcf_super1_with_filter_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_bcftools.vcf.gz"
+        message:
+                "Marked filter on raw VCFS for SUPER1 with bcftools"
+        log:
+                stdout = path_github+"log/marked_vcf_filter_SUPER1_bcftools.log"
+        benchmark:
+                path_github+"benchmark/marked_vcf_filter_SUPER1_bcftools.txt"
+        shell:
+                '(bcftools view {input.vcf_super1_bcftools} -Oz -o '+path_output+'VCF/tmp.vcf.gz && '
+                'bcftools index -t '+path_output+'VCF/tmp.vcf.gz && '
+                #'(tabix -f -p vcf {input.vcf_super1_bcftools} && '
+                'vcftools --gzvcf '+path_output+'VCF/tmp.vcf.gz --minGQ 20 --stdout --recode --recode-INFO-all | '
+                'bcftools filter -e "QUAL<20.0" -s "QUAL20" -m + | '
+                #'bcftools filter -e "AVG(FMT/DP)>{params.cutoff}.0" -s "AVGDPcutoff{params.cutoff}" -m + | '
+                'bcftools filter -e "MQ<40.0" -s "MQ40" -m + | '
+                #'bcftools filter -e "FS>60.0" -s "FS60" -m + | '
+                #'bcftools filter -e "SOR>3.0" -s "SOR3" -m + | '
+                #'bcftools filter -e "MQRankSum<-12.5" -s "MQRankSum-12.5" -m + | '
+                #'bcftools filter -e "ReadPosRankSum<-8.0" -s "ReadPosRankSum-8" -m + | '
+                'bcftools filter -e "F_MISSING>0.5" -s "MISSING50" -m + | '
+                'bgzip -c > {output.vcf_super1_with_filter_bcftools}) 2> {log.stdout}'
+
+rule filter_vcf_bcftools:
+        input:
+                vcf_super1_with_filter_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_bcftools.vcf.gz"
+        output:
+                vcf_super1_filtered_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_bcftools.vcf.gz"
+        message:
+                "Filter VCFs for SUPER1 with bcftools"
+        log:
+                stdout = path_github+"log/filtered_vcf_SUPER1_bcftools.log"
+        benchmark:
+                path_github+"benchmark/filtered_vcf_SUPER1_bcftools.txt"
+        shell:
+                "(bcftools filter -g 5 {input.vcf_super1_with_filter_bcftools} | "
+                "bcftools view --types snps --max-alleles 2 | "
+                "bgzip -c > {output.vcf_super1_filtered_bcftools}) 2> {log.stdout}"
+
+rule marked_vcf_with_filter_nogq20_bcftools:
+        input:
+                vcf_super1_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_bcftools.bcf"
+        output:
+                vcf_super1_with_filter_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20_bcftools.vcf.gz"
+        message:
+                "Marked filter on raw VCFS for SUPER1 no GQ 20 with bcftools"
+        log:
+                stdout = path_github+"log/marked_vcf_filter_SUPER1_nogq20_bcftools.log"
+        benchmark:
+                path_github+"benchmark/marked_vcf_filter_SUPER1_nogq20_bcftools.txt"
+        shell:
+                '(bcftools view {input.vcf_super1_bcftools} -Oz -o '+path_output+'VCF/tmp.vcf.gz && '
+                'bcftools index -t '+path_output+'VCF/tmp.vcf.gz && '
+                #'(tabix -f -p vcf {input.vcf_super1_bcftools} && '
+                'vcftools --gzvcf '+path_output+'VCF/tmp.vcf.gz --minGQ 0 --stdout --recode --recode-INFO-all | '
+                'bcftools filter -e "QUAL<20.0" -s "QUAL20" -m + | '
+                #'bcftools filter -e "AVG(FMT/DP)>{params.cutoff}.0" -s "AVGDPcutoff{params.cutoff}" -m + | '
+                'bcftools filter -e "MQ<40.0" -s "MQ40" -m + | '
+                #'bcftools filter -e "FS>60.0" -s "FS60" -m + | '
+                #'bcftools filter -e "SOR>3.0" -s "SOR3" -m + | '
+                #'bcftools filter -e "MQRankSum<-12.5" -s "MQRankSum-12.5" -m + | '
+                #'bcftools filter -e "ReadPosRankSum<-8.0" -s "ReadPosRankSum-8" -m + | '
+                'bcftools filter -e "F_MISSING>0.5" -s "MISSING50" -m + | '
+                'bgzip -c > {output.vcf_super1_with_filter_nogq20_bcftools}) 2> {log.stdout}'
+
+rule filter_vcf_nogq20_bcftools:
+        input:
+                vcf_super1_with_filter_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filter_marked_nogq20_bcftools.vcf.gz"
+        output:
+                vcf_super1_filtered_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_nogq20_bcftools.vcf.gz"
+        message:
+                "Filter VCFs for SUPER1 no gq 20 with bcftools"
+        log:
+                stdout = path_github+"log/filtered_vcf_SUPER1_nogq20_bcftools.log"
+        benchmark:
+                path_github+"benchmark/filtered_vcf_SUPER1_nogq20_bcftools.txt"
+        shell:
+                "(bcftools filter -g 5 {input.vcf_super1_with_filter_nogq20_bcftools} | "
+                "bcftools view --types snps --max-alleles 2 | "
+                "bgzip -c > {output.vcf_super1_filtered_nogq20_bcftools}) 2> {log.stdout}"
+
+rule mendelian_violation_bcftools:
+        input:
+                vcf_super1_filtered_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_bcftools.vcf.gz",
+                vcf_super1_filtered_nogq20_bcftools = path_output+"VCF/TRIOS_ANG_SUPER1_filtered_nogq20_bcftools.vcf.gz",
+                sdf = path_output+"analysis/lsaxatilis_sdf",
+                pedigree = path_output+"analysis/pedigree.fam"
+        output:
+                #allrecords_GQ20 = path_output+"analysis/mendelian_violation/mendelian_violation_persamples_allrecords_GQ20.txt",
+                #GQ20 = path_output+"analysis/mendelian_violation/mendelian_violation_persamples_filter_GQ20.txt",
+                #allrecords_GQ0 = path_output+"analysis/mendelian_violation/mendelian_violation_persamples_allrecords_GQ0.txt",
+                #GQ0 = path_output+"analysis/mendelian_violation/mendelian_violation_persamples_filter_GQ0.txt",
+                touch_mendelian_violation_bcftools = path_output+"analysis/mendelian_violation/touch/{child}_bcftools.touch"
+        message:
+                "Find mendelian violations for {wildcards.child} with bcftools"
+        log:
+                stdout = path_github+"log/mendelian_violation_{child}_bcftools.log"
+        benchmark:
+                path_github+"benchmark/mendelian_violation_{child}_bcftools.txt"
+        shell:
+                "(bcftools view -s {wildcards.child},P18710_146,P18710_147 -o - {input.vcf_super1_filtered_bcftools} | rtg mendelian -i - -t {input.sdf} --pedigree {input.pedigree} --all-records | tail -n 1 | sed 's/$/ - {wildcards.child}/' >> "+path_output+"analysis/mendelian_violation/mendelian_violation_persamples_allrecords_GQ20_bcftools.txt && "
+                "bcftools view -s {wildcards.child},P18710_146,P18710_147 -o - {input.vcf_super1_filtered_bcftools} | rtg mendelian -i - -t {input.sdf} --pedigree {input.pedigree} | tail -n 1 | sed 's/$/ - {wildcards.child}/' >> "+path_output+"analysis/mendelian_violation/mendelian_violation_persamples_filter_GQ20_bcftools.txt && "
+                "bcftools view -s {wildcards.child},P18710_146,P18710_147 -o - {input.vcf_super1_filtered_nogq20_bcftools} | rtg mendelian -i - -t {input.sdf} --pedigree {input.pedigree} --all-records | tail -n 1 | sed 's/$/ - {wildcards.child}/' >> "+path_output+"analysis/mendelian_violation/mendelian_violation_persamples_allrecords_GQ0_bcftools.txt && "
+                "bcftools view -s {wildcards.child},P18710_146,P18710_147 -o - {input.vcf_super1_filtered_nogq20_bcftools} | rtg mendelian -i - -t {input.sdf} --pedigree {input.pedigree} | tail -n 1 | sed 's/$/ - {wildcards.child}/' >> "+path_output+"analysis/mendelian_violation/mendelian_violation_persamples_filter_GQ0_bcftools.txt && "
+                "touch {output.touch_mendelian_violation_bcftools}) 2> {log.stdout}"
+
