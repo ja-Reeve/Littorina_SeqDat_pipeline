@@ -1,0 +1,39 @@
+#!/bin/bash
+
+### This script calling varaints (SNPs and indels) from Littorina saxatilis WGS data. Calling 
+### is split across the 17 superscaffold (chromosomes). Modifications are needed to include the
+### unscaffolded contgs. This command took around 6h to run for 24 samples on 6.4GB RAM per core.
+### This script was designed to run on the Rackham server on UppMax.
+### James Reeve - Göteborgs Universitet
+### 29/06/2023
+
+### Job parameters
+#SBATCH -A naiss2023-5-264
+#SBATCH -p core
+#SBATCH -n 20
+#SBATCH -t 4-6:00:00
+#SBATCH --array=1-17
+#SBATCH -J BS_VarCall_LG%a
+#SBATCH --output=logfiles/var_call_test_LG%a.out
+#SBATCH --error=logfiles/var_call_test_LG%a.err
+
+### Required software
+module load bioinfo-tools
+module load bcftools/1.12
+
+### The script:  
+# 1. Filepaths:
+BAM=/proj/snic2020-6-155/BAM/DIR
+REF=/proj/snic2020-6-155/webexport/Lsax_new2023_ref
+VCF=/proj/snic2020-6-155/OUTPUT/VCF/DIR
+
+# 2. Create list of bams:
+## Note: replace $TMPDIR with the path to the scratch directory on your server
+ls $BAM/*_PE_noDup.bam > $TMPDIR/bams.txt
+
+# 3. Variant call:
+bcftools mpileup --threads 20 -b $TMPDIR/bams.txt \
+        -a FORMAT/AD,FORMAT/DP,FORMAT/SP,INFO/AD \ # Add additional tags for depth and strand bias
+        -f $REF/Lsax_genome_CLR_HiC_curated_freeze_1_2023_02_17.fasta \ # Reference genome
+        -r SUPER_${SLURM_ARRAY_TASK_ID} | \ # Specify region. Here this is being done automatically from the slurm array
+        bcftools call -mOz -v --threads 20 -f GQ,GP -o $VCF/SUPER${SLURM_ARRAY_TASK_ID}.vcf.gz
