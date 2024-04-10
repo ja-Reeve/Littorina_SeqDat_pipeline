@@ -1,9 +1,9 @@
 # Littorina_SeqDat_pipeline
-Littorina sequence data pipeline planning
+**James Reeve - University of Gothenburg**
 
-This GitHub page is designed for us to share code and small text files that we use for designing a sequence data variant calling pipeline.
-Currently this page is private. I plan to make it public once we have settled on a basic pipeline for our analyses.
+**2024-04-10**
 
-James Reeve - University of Gothenburg
+This is a protocol for a standard pipeline for processing short-read seqeuncing data from *Littorina* snails. Each step was carefully considered to get the best results from short reads of a non-model species. The detailed desceription of this pipeline is published [here](https://www.protocols.io/view/a-standard-pipeline-for-processing-short-read-sequ-c6ygzftw).
 
-2023-03-16
+### Protocol outline
+![SNP_call_pipeline_Fig1](https://github.com/ja-Reeve/Littorina_SeqDat_pipeline/assets/82411887/a4f2633d-d8a3-47db-b244-2784c042aefc)
