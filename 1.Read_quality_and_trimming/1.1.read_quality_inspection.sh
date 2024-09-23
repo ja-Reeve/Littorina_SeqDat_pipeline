@@ -33,6 +33,3 @@ fastqc --dir $TMP -t 4 \
 multiqc $DIR/fastqc \
 	-o $DIR/MultiQC \
 	-n multiqc_report_CZA020_Ls.html
-
-### Rename the data folder
-mv $DIR/MultiQC/multiqc_data $DIR/MultiQC/multiqc_data_CZA020_Ls
