@@ -9,6 +9,7 @@ This repository is intended as a tutorial for the protocol. All steps are tested
 
 ### Data access:
   Raw reads: NCBI-SRA [SAMN37254815](https://www.ncbi.nlm.nih.gov/biosample)
+  
   Reference genome: NCBI-Genome [GCA_037325665.1](https://www.ncbi.nlm.nih.gov/datasets/genome/GCA_037325665.1/) 
 
 
