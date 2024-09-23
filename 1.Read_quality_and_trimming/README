@@ -1,0 +1,40 @@
+#1) Read quality inspection and trimming:
+	Short-read sequencers output raw data in fastq format. This contains nucleotides along with a Phred-likelihood quality score for each base (the probability that the called base is wrong). Bases at the end of reads often have lower quality than those at the start. Trimming these poor quality bases is recommended using a tool like fastp. (Del Fabbro 2013, Chen et al. 2018). Base quality is not the only metric that can be used to evaluate reads; other important statistics include read length, GC content, duplications and adaptor content (HBCtraining, n.d.). We recommend using fastqc to generate summary reports of read quality. For datasets of many individuals, these reports can be merged with MultiQC.
+
+
+##1.1) Read quality:
+Before trimming and mapping, our reads are evaluated with fastqc per individual and MultiQC for the whole dataset. We run fastqc with default settings, apart from -t which specifies the number of threads (-t will depend on your computer specifications). The resulting quality reports are composed of several sections (e.g. read length, nucleotide content, adaptors, duplication). Detailed example reports and a tutorial video are on the fastqc website. We recommend looking at these before deciding how to trim reads.
+
+```
+# fastqc
+fastqc --dir /path/temp_files -t 20 \
+	/path/file.fastq.gz \
+	--outdir /path/output/
+
+# MultiQC
+multiqc /path/fastqc/dir \
+	-o /path/output/dir \
+	-n output.name.prefix
+
+# Note: change ‘/path/’ to your own file directory path.
+´´´
+
+
+##1.2) Read trimming:
+We recommend the program fastp for trimming adaptors and removing low quality ends. This program can identify adaptor sequences (assuming standard adaptors were used by the sequencing centre), and other known errors like polyG tails, and automatically trim them from the data.  There are also options to specify adaptor sequences manually and the number of base pairs to clip, if the default settings do not work with the data. fastp also generates a quality report which can be compared with the fastqc reports to see if the trimming is successful.
+
+For paired-end sequencing (Illumina, 2023) you must specify both a forward (-i) and reverse (-I) read files. By default fastp overwrites existing files, we set -o and -O to specify the output. Optional filtering steps we use are -g to trim polyG tails, -c to perform base correction in overlapping paired data, and -y as a complexity filter that removes reads with < 30% complexity (shifts between neighbouring base pairs; basei ≠ basei+1). Finally, --html, --json, and --report_title are set to specify where the output reports are placed.
+
+```
+fastp \
+      -i /path/input_R1.fastq.gz \ # input files
+      -I /path/input_R2.fastq.gz \ 
+	-o /path/output_R1.fastq.gz \ # output files
+      -O /path/output_R2.fastq.gz \
+	--thread 20 -g -c -y 30 \
+	--html /path/output_report.html \ # quality reports
+	--json /path/output_report.json \
+	--report_title report.title.prefix 
+´´´
+
+It is a good idea to inspect the reports at this point to determine if read trimming has improved the quality (see fastqc tutorials). If so, move onto read mapping. If not, the fastp options need tweaking until the reads are ready to map.
