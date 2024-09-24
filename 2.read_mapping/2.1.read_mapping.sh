@@ -26,13 +26,13 @@ REF=/path/to/reference/genome
 ### Script
 # 1) Index reference genome
 # Note: this only needs to be run once
-bwa index $REF/genome.fasta
+bwa index $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna.gz
 
 # 2) Mapping
 bwa mem \
         -M -t 20 \
         -R '@RG\tID:CZA020_Ls\tSM:CZA020_Ls\tPL:illumina' \
-        $REF/genome.fasta \
+        $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna.gz \
         $DIR/CZA020_Ls_R1.fastq.gz \
         $DIR/CZA020_Ls_R2.fastq.gz |\ # pipe to samtools to compress into BAM
 samtools view -b > $DIR/CZA020_Ls_PE.bam
