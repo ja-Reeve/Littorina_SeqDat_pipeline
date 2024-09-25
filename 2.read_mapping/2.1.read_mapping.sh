@@ -34,5 +34,5 @@ bwa mem \
         -R '@RG\tID:CZA020_Ls\tSM:CZA020_Ls\tPL:illumina' \
         $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna.gz \
         $DIR/CZA020_Ls_R1.fastq.gz \
-        $DIR/CZA020_Ls_R2.fastq.gz |\ # pipe to samtools to compress into BAM
+        $DIR/CZA020_Ls_R2.fastq.gz |\
 samtools view -b > $DIR/CZA020_Ls_PE.bam
