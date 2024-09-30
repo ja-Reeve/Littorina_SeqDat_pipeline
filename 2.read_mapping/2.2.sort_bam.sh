@@ -28,7 +28,7 @@ samtools collate -@ 20 -Ou $DIR/CZA020_Ls_PE.bam |\
         samtools sort -@ 20 - -o $DIR/CZA020_Ls_PE_sort.bam
 
 # ii) Mark duplicates
-samtools markdups -@ 20 -d 100 $DIR/CZA020_Ls_PE_sort.bam $DIR/CZA020_Ls_PE_DupMark.bam
+samtools markdup -@ 20 -d 100 $DIR/CZA020_Ls_PE_sort.bam $DIR/CZA020_Ls_PE_DupMark.bam
 
 # iii) Index and generate flagstat summary
 samtools index -b $DIR/CZA020_Ls_PE_DupMark.bam
