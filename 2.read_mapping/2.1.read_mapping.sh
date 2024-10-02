@@ -26,7 +26,9 @@ REF=/path/to/reference/genome
 ### Script
 # 1) Index reference genome
 # Note: this only needs to be run once
-bwa index $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna.gz
+gunzip $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna.gz
+bwa index $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna
+samtools faidx $REF/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna
 
 # 2) Mapping
 bwa mem \
