@@ -9,7 +9,7 @@
 ### 2024-10-02
 
 ### Job parameters
-#SBATCH -n 4
+#SBATCH -n 20
 #SBATCH -t 1:00:00
 #SBATCH -J Lsrp_tut_3
 #SBATCH --output logfiles/Lsrp_variant_call.out
@@ -39,7 +39,7 @@ sed -i -e 's/^/'"$CHR"':/' $DIR/${CHR}_regions.txt
 
 
 ## iii) Varinat call each window
-cat $DIR/${CHR}_regions.txt | parallel -j4 '
+cat $DIR/${CHR}_regions.txt | parallel -j20 '
         bcftools mpileup -Ou -a FORMAT/AD,FORMAT/DP,FORMAT/SP,INFO/AD \
                 -f '"$REF"'/GCA_037325665.1_US_GU_Lsax_2.0_genomic.fna \
                 -r ${} \
