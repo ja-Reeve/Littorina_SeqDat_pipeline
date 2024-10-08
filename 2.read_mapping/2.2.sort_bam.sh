@@ -22,6 +22,9 @@ DIR=/path/to/your/bam
 
 ### Script
 # '-@' assigns threads to samtools tasks
+# If you run into an 'OOM kill' error try storing temporary files
+# in the scratch memory by adding the -T <dir> option to samtools 
+# sort & samtools collate.
 # i) Sort by name then position
 samtools collate -@ 20 -Ou $DIR/CZA020_Ls_PE.bam |\
         samtools fixmate -@ 20 -m - - |\
