@@ -26,8 +26,7 @@ DIR=/path/to/your/data
 ### Script
 ## i) Remove multiallelic sites, indels, and SNPs within 5bp
 bcftools filter -Ou -g 5:indel,other $DIR/CZA020_Ls_CM074573.1.raw.vcf.gz |\
-        bcftools view -Oz -M 2 -v snps > $DIR/CZA020_Ls_CM074573.1.noIndel.vcf.gz
-# Add -m 2 to the previous line to remove invariant sites
+        bcftools view -Oz -M 2 -V indels,other,mnps > $DIR/CZA020_Ls_CM074573.1.noIndel.vcf.gz
 
 # Count SNPs in filtered VCF
 Nsnp=$(bcftools view -H $DIR/CZA020_Ls_CM074573.1.noIndel.vcf.gz | wc -l)
